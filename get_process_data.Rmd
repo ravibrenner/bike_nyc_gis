@@ -23,10 +23,39 @@ collisions <- soc_read("https://data.cityofnewyork.us/Public-Safety/Motor-Vehicl
 ```
 
 save as csv
+
+Need to split into years for github file size limit
 ```{r}
 write_csv(collisions |>
-            select(-location,-starts_with(":")),
-          "data/collisions_2020_to_present.csv")
+            select(-location,-starts_with(":")) |>
+            filter(year(crash_date) == 2020),
+          "data/collisions_2020.csv")
+
+write_csv(collisions |>
+            select(-location,-starts_with(":")) |>
+            filter(year(crash_date) == 2021),
+          "data/collisions_2021.csv")
+
+write_csv(collisions |>
+            select(-location,-starts_with(":")) |>
+            filter(year(crash_date) == 2022),
+          "data/collisions_2022.csv")
+
+write_csv(collisions |>
+            select(-location,-starts_with(":")) |>
+            filter(year(crash_date) == 2023),
+          "data/collisions_2023.csv")
+
+write_csv(collisions |>
+            select(-location,-starts_with(":")) |>
+            filter(year(crash_date) == 2024),
+          "data/collisions_2024.csv")
+
+write_csv(collisions |>
+            select(-location,-starts_with(":")) |>
+            filter(year(crash_date) == 2025),
+          "data/collisions_2025.csv")
+
 ```
 
 
@@ -58,8 +87,34 @@ bike_counts <- soc_read("https://data.cityofnewyork.us/Transportation/Bicycle-Co
 Save as csv
 ```{r}
 write_csv(bike_counts |>
-            select(-starts_with(":")),
-          "data/bike_counts.csv")
+            select(-starts_with(":")) |>
+            filter(year(date) == 2020),
+          "data/bike_counts_2020.csv")
+
+write_csv(bike_counts |>
+            select(-starts_with(":")) |>
+            filter(year(date) == 2021),
+          "data/bike_counts_2021.csv")
+
+write_csv(bike_counts |>
+            select(-starts_with(":")) |>
+            filter(year(date) == 2022),
+          "data/bike_counts_2022.csv")
+
+write_csv(bike_counts |>
+            select(-starts_with(":")) |>
+            filter(year(date) == 2023),
+          "data/bike_counts_2023.csv")
+
+write_csv(bike_counts |>
+            select(-starts_with(":")) |>
+            filter(year(date) == 2024),
+          "data/bike_counts_2024.csv")
+
+write_csv(bike_counts |>
+            select(-starts_with(":")) |>
+            filter(year(date) == 2025),
+          "data/bike_counts_2025.csv")
 ```
 
 ## Bike counters
