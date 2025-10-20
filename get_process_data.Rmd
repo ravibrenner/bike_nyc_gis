@@ -1,0 +1,76 @@
+---
+title: "get_open_data"
+author: "Ravi Brenner"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(socratadata)
+library(sf)
+```
+
+## Read collisions data
+```{r}
+collisions <- soc_read("https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95/about_data",
+                       query = soc_query(
+                         where = "crash_date >= '2020-01-01'"
+                       ))
+```
+
+save as csv
+```{r}
+write_csv(collisions |>
+            select(-location,-starts_with(":")),
+          "data/collisions_2020_to_present.csv")
+```
+
+
+## Read in bike routes data
+```{r}
+bike_routes <- soc_read("https://data.cityofnewyork.us/dataset/New-York-City-Bike-Routes/mzxg-pwib/about_data")
+```
+
+Save as csv and .shp
+```{r}
+write_csv(bike_routes |>
+           select(-starts_with(":")),
+          "data/nyc_bike_routes.csv")
+
+st_write(bike_routes |>
+           select(-starts_with(":")),
+         "data/nyc_bike_routes.shp",
+         delete_layer = TRUE)
+```
+
+## Bike counts
+```{r}
+bike_counts <- soc_read("https://data.cityofnewyork.us/Transportation/Bicycle-Counts/uczf-rk3c/about_data",
+                        query = soc_query(
+                          where = "date >= '2020-01-01'"
+                        ))
+```
+
+Save as csv
+```{r}
+write_csv(bike_counts |>
+            select(-starts_with(":")),
+          "data/bike_counts.csv")
+```
+
+## Bike counters
+```{r}
+bike_counters <- soc_read("https://data.cityofnewyork.us/Transportation/Bicycle-Counters/smn3-rzf9/about_data")
+```
+
+Save as csv
+```{r}
+write_csv(bike_counters,
+          "data/bike_counters.csv")
+```
+
+
