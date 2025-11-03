@@ -1,0 +1,204 @@
+---
+title: "Bike Collision GIS analysis"
+author: "Ravi Brenner"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(sf)
+library(ggspatial)
+library(sfhotspot)
+```
+
+Importing and cleaning data
+
+Bike routes
+```{r}
+bike_routes <- st_read("data/nyc_bike_routes.shp")  |>
+  st_transform(crs = 2263) |>
+  filter(year(instdate) <= 2024) |> # only want bike routes that existed in 2024 or earlier
+  mutate(ft_facilit = case_match(ft_facilit,
+                                 "<Null>" ~ NA,
+                                 "NA" ~ NA,
+                                 .default = ft_facilit),
+         tf_facilit = case_match(tf_facilit,
+                                 "<Null>" ~ NA,
+                                 "NA" ~ NA,
+                                 .default = tf_facilit),
+         boro = case_match(boro,
+                           1 ~ "Manhattan",
+                           2 ~ "Bronx",
+                           3 ~ "Brooklyn",
+                           4 ~ "Queens",
+                           5 ~ "Staten Island"),
+         facilitycl = case_match(facilitycl,
+                                 "I" ~ "Protected",
+                                 "II" ~ "Conventional",
+                                 "III" ~ "Shared Lane or Signed Route",
+                                 "L" ~ "Link"),
+         facilitycl = factor(facilitycl,
+                             levels = c("Protected",
+                                        "Conventional",
+                                        "Shared Lane or Signed Route",
+                                        "Link")))
+```
+
+Collisions for 2024
+```{r}
+collisions_2024 <- read_csv("data/collisions_2024.csv",
+                            na = c("NA")) |>
+  drop_na(latitude,longitude) |>
+  filter(latitude != 0,
+         longitude != 0,
+         number_of_cyclist_injured > 0 | number_of_cyclist_killed > 0) |>
+  st_as_sf(coords = c("longitude","latitude"),
+           crs = 4326) |>
+  st_transform(crs = st_crs(bike_routes))
+```
+
+Bike counts and counters
+```{r}
+bike_counts_2024 <- read_csv("data/bike_counts_2024.csv")
+
+bike_counters <- read_csv("data/bike_counters.csv") |>
+  filter(latitude != 0,
+         longitude != 0) |>
+  st_as_sf(coords = c("longitude","latitude"),
+           crs = 4326) |>
+  st_transform(crs = st_crs(bike_routes))
+```
+
+NYC boundaries
+```{r}
+nyc <- st_read("data/Counties_Shoreline.shp") |>
+  filter(NAME %in% c("Bronx","Richmond","Kings","Queens","New York")) |>
+  st_transform(crs = st_crs(bike_routes))
+```
+
+Community districts
+```{r}
+nyc_cd <- st_read("data/nyc_cd.shp") |>
+  st_transform(crs = st_crs(bike_routes))
+```
+
+
+
+# Preliminary map
+
+```{r}
+ggplot() + 
+  annotation_map_tile(type = "cartolight", zoomin = 0) +
+  geom_sf(data = collisions_2024,
+          color = "lightblue",
+          alpha = 0.5) +
+  geom_sf(data = bike_routes,
+          aes(color = facilitycl)) +
+  theme_void()
+```
+
+# EDA maps
+locations of bike counters
+```{r}
+ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = 0) + 
+  geom_sf(data = bike_counters) + 
+  geom_sf(data = bike_routes,
+          aes(color = facilitycl)) +
+  theme_void()
+```
+
+Bike counters with counts
+```{r}
+bike_counts_2024 |> 
+  summarize(.by = id, 
+            counts = sum(counts) / 365) |>
+  left_join(bike_counters, by = "id") |>
+  st_as_sf() |>
+  ggplot() + 
+  annotation_map_tile(type = "cartolight", zoomin = 0) + 
+  geom_sf(aes(color = counts)) +
+  theme_void()
+```
+
+
+spatially join crashes and bike lanes?
+First need to add a buffer around lanes
+```{r}
+buffers <- st_buffer(bike_routes, dist = 100)
+
+collisions_routes <- st_join(collisions_2024, buffers) |>
+  mutate(near_bike_route = if_else(!is.na(segmentid),1,0)) |>
+  filter(near_bike_route == 1)
+```
+
+```{r}
+ggplot() +
+  annotation_map_tile(type = "cartolight", zoomin = 0) + 
+  geom_sf(data = collisions_routes,
+          aes(color = facilitycl),
+          alpha = 0.5) +
+  geom_sf(data = bike_routes,
+          aes(color = facilitycl)) +
+  theme_void() 
+```
+
+join collisions with city neighborhoods
+```{r}
+collisions_cd <- st_join(nyc_cd, collisions_2024)
+
+collisions_cd |>
+  group_by(boro_cd) |>
+  summarize(num_crashes = n()) |>
+  mutate(area = as.numeric(st_area(geometry)),
+         crashes_per_area = num_crashes / area) |>
+  ggplot() + 
+  annotation_map_tile(type = "cartolight", zoomin = 0) + 
+  geom_sf(aes(fill = crashes_per_area)) + 
+  theme_void()
+```
+
+Collisions in my CD
+```{r}
+collisions_cd <- st_join(collisions_2024,nyc_cd) 
+
+bike_routes_cd <- st_join(bike_routes,
+                          nyc_cd |>
+                            filter(boro_cd == 106),
+                          left = FALSE)
+
+collisions_cd |>
+  filter(boro_cd == 106) |>
+  ggplot() + 
+  annotation_map_tile(type = "cartolight", zoomin = 0) + 
+  geom_sf() + 
+  geom_sf(data = bike_routes_cd,
+          aes(color = facilitycl)) + 
+  theme_void()
+```
+
+
+Density of bike lanes by neighborhood
+```{r}
+bike_routes |>
+  mutate(bike_lane_length = st_length(bike_routes)) |>
+  group_by(boro) |>
+  summarize(bike_lane_length = sum(bike_lane_length)) 
+
+nyc |>
+  mutate(area = st_area(nyc)) |>
+  select(NAME, area)
+```
+
+## analysis ideas
+- time period: 2024
+- unit of analysis:
+  - crash point. was crash in bike lane? what type of bike lane?
+  - bike lane. how many crashes per mile of bike lane of different types? can we focus on high volume bike lanes?
+  - neighborhood / CD. density of crashes and bike lanes per mile? as a fraction of total in the city?
+  
+
