@@ -21,7 +21,8 @@ Bike routes
 ```{r}
 bike_routes <- st_read("data/nyc_bike_routes.shp")  |>
   st_transform(crs = 2263) |>
-  filter(year(instdate) <= 2024) |> # only want bike routes that existed in 2024 or earlier
+  filter(year(instdate) <= 2024,
+         status == "Current") |> # only want bike routes that existed in 2024 or earlier
   mutate(ft_facilit = case_match(ft_facilit,
                                  "<Null>" ~ NA,
                                  "NA" ~ NA,
@@ -39,12 +40,12 @@ bike_routes <- st_read("data/nyc_bike_routes.shp")  |>
          facilitycl = case_match(facilitycl,
                                  "I" ~ "Protected",
                                  "II" ~ "Conventional",
-                                 "III" ~ "Shared Lane or Signed Route",
+                                 "III" ~ "Shared Lane",
                                  "L" ~ "Link"),
          facilitycl = factor(facilitycl,
                              levels = c("Protected",
                                         "Conventional",
-                                        "Shared Lane or Signed Route",
+                                        "Shared Lane",
                                         "Link")))
 ```
 
@@ -98,7 +99,100 @@ ggplot() +
           alpha = 0.5) +
   geom_sf(data = bike_routes,
           aes(color = facilitycl)) +
-  theme_void()
+  scale_color_discrete(name = "Bike Lane Type") + 
+  labs(title = "Bike Lanes and Collisions Involving a Bicycle in New York City, 2024",
+       caption = "Author: Ravi Brenner\nSource: NYC Open Data\nNote: crash locations shown in blue may represent multiple crashes at that location") + 
+  theme_void()  +
+  theme( 
+    plot.caption.position = "plot",
+    plot.caption = element_text(hjust = 1,
+                                vjust = 20),
+    legend.position = "inside",
+    legend.position.inside = c(0.2,0.7),
+    legend.key.height = unit(0.6, "cm"), 
+    legend.text = element_text(size = 10),
+    legend.background = element_rect(
+      fill = alpha("white", 0.8),
+      color = NA)
+  ) + 
+  annotation_north_arrow(
+    height = unit(.8, "cm"),
+    width = unit(.6, "cm"),
+    pad_x = unit(2.5, "in"), 
+    pad_y = unit(0.35, "in"),
+    style = north_arrow_minimal
+  ) +
+  annotation_scale(
+    style = "ticks",
+    pad_x = unit(1.5, "in"),
+    pad_y = unit(0.4, "in"),
+    unit_category = "imperial",
+    width_hint = 0.1
+  )
+
+ggsave(
+  filename = "output/prelim_map_1.jpg",
+  width = 7,
+  height = 7
+  )
+```
+
+join collisions with city neighborhoods
+```{r}
+collisions_cd <- st_join(nyc_cd, collisions_2024)
+
+temp <- collisions_cd |>
+  group_by(boro_cd) |>
+  summarize(num_crashes = n()) |>
+  mutate(area = as.numeric(st_area(geometry) / (5280*5280)),
+         crashes_per_area = num_crashes / area) 
+
+jenks_breaks <- classInt::classIntervals(temp$crashes_per_area, style = "jenks", n = 4)$brks
+
+temp |>
+  ggplot() + 
+  annotation_map_tile(type = "cartolight", zoomin = 0) + 
+  geom_sf(aes(fill = crashes_per_area),
+          alpha = 0.5) + 
+  scale_fill_viridis_c(name = "Crashes per Square Mile",
+                       breaks = jenks_breaks,
+                       labels = c(0.15,14.5,37.4,58.1,123.5)) +
+  labs(title = "Bike Crashes by Community District, New York City, 2024",
+       caption = "Author: Ravi Brenner\nSource: NYC Open Data") + 
+  theme_void() +
+    theme( 
+    plot.caption.position = "plot",
+    plot.caption = element_text(hjust = 1,
+                                vjust = 15),
+    legend.position = "inside",
+    legend.position.inside = c(0.2,0.7),
+    legend.key.height = unit(0.6, "cm"), 
+    legend.text = element_text(size = 10),
+    legend.background = element_rect(
+      fill = alpha("white", 0.5),
+      color = NA),
+    legend.margin = margin(b = 5)
+  ) + 
+  annotation_north_arrow(
+    height = unit(.8, "cm"),
+    width = unit(.6, "cm"),
+    pad_x = unit(2.5, "in"), 
+    pad_y = unit(0.35, "in"),
+    style = north_arrow_minimal
+  ) +
+  annotation_scale(
+    style = "ticks",
+    pad_x = unit(1.5, "in"),
+    pad_y = unit(0.4, "in"),
+    unit_category = "imperial",
+    width_hint = 0.1
+  )
+
+ggsave(
+  filename = "output/prelim_map_2.jpg",
+  width = 7,
+  height = 7
+  )
 ```
 
 # EDA maps
@@ -125,6 +219,24 @@ bike_counts_2024 |>
   theme_void()
 ```
 
+spatially join bike counters and lanes
+```{r}
+bike_counts_2024 |> 
+          summarize(.by = id, 
+                    counts = sum(counts) / 365) |>
+          left_join(bike_counters, by = "id") |>
+  st_as_sf() |>
+  st_join(bike_routes |>
+              st_buffer(dist = 50),
+          left = TRUE) |> 
+  ggplot() + 
+  annotation_map_tile(type = "cartolight",zoomin = 0) + 
+  geom_sf(aes(color = facilitycl)) + 
+  theme_void()
+```
+
+So counters are (mostly) near protected bike lanes
+
 
 spatially join crashes and bike lanes?
 First need to add a buffer around lanes
@@ -147,20 +259,7 @@ ggplot() +
   theme_void() 
 ```
 
-join collisions with city neighborhoods
-```{r}
-collisions_cd <- st_join(nyc_cd, collisions_2024)
 
-collisions_cd |>
-  group_by(boro_cd) |>
-  summarize(num_crashes = n()) |>
-  mutate(area = as.numeric(st_area(geometry)),
-         crashes_per_area = num_crashes / area) |>
-  ggplot() + 
-  annotation_map_tile(type = "cartolight", zoomin = 0) + 
-  geom_sf(aes(fill = crashes_per_area)) + 
-  theme_void()
-```
 
 Collisions in my CD
 ```{r}
@@ -201,4 +300,5 @@ nyc |>
   - bike lane. how many crashes per mile of bike lane of different types? can we focus on high volume bike lanes?
   - neighborhood / CD. density of crashes and bike lanes per mile? as a fraction of total in the city?
   
+I am worried about not being able to account for traffic volumes. of course there will be more crashes where there are more riders...Maybe focusing in on bike counters or a single neighborhood will help, but it is tricky.
 
