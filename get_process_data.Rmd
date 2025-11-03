@@ -128,4 +128,21 @@ write_csv(bike_counters,
           "data/bike_counters.csv")
 ```
 
+# Community districts
+```{r}
+nyc_cd <- soc_read("https://data.cityofnewyork.us/City-Government/Community-Districts/5crt-au7u/about_data")
+
+nyc_cd |>
+  mutate(boro = str_sub(as.character(boro_cd),1,1),
+         boro_name = case_match(boro,
+                                "1" ~ "Manhattan",
+                                "2" ~ "Bronx",
+                                "3" ~ "Brooklyn",
+                                "4" ~ "Queens",
+                                "5" ~ "Staten Island")) |>
+  select(-starts_with(":")) |>
+  st_write("data/nyc_cd.shp",
+           delete_layer = TRUE)
+```
+
 
