@@ -12,7 +12,6 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(sf)
 library(ggspatial)
-library(sfhotspot)
 ```
 
 Importing and cleaning data
@@ -291,7 +290,7 @@ collisions_cd |>
 ```
 
 
-Density of bike lanes by neighborhood
+Density of bike lanes by borough
 ```{r}
 bike_routes |>
   mutate(bike_lane_length = st_length(bike_routes)) |>
@@ -322,7 +321,8 @@ Categorizing each crash by whether it was within 100 feet of a bike lane
 ```{r}
 buffers <- st_buffer(bike_routes, dist = 100)
 
-collisions_routes <- st_join(collisions_2024, buffers) |>
+collisions_routes <- st_join(collisions_2024, buffers,
+                             largest = TRUE) |>
   mutate(near_bike_route = if_else(!is.na(segmentid),1,0)) 
 
 collisions_routes |>
@@ -331,7 +331,7 @@ collisions_routes |>
             num_bike_injured = sum(number_of_cyclist_injured),
             num_bike_killed = sum(number_of_cyclist_killed)) |>
   st_drop_geometry() |>
-  inner_join(bike_routes |>
+  left_join(bike_routes |>
                mutate(length = as.numeric(st_length(geometry))) |>
                group_by(facilitycl) |>
                summarize(length_miles = sum(length)/5280) |>
@@ -339,30 +339,43 @@ collisions_routes |>
              ) |>
   mutate(crashes_per_mile = n / length_miles,
          injuries_per_mile = num_bike_injured / length_miles,
-         deaths_per_mile = num_bike_killed / length_miles) 
+         deaths_per_mile = num_bike_killed / length_miles,
+         killed_per_crash = num_bike_killed / n) 
 ```
 
 ## crashes by bike lane - counters
 
 focus on lanes near counters
 ```{r}
-buffers <- st_buffer(bike_routes,100)
 
-counters_routes <- st_join(buffers,bike_counters) |>
+
+# bike counts at each counter
+bike_counts <- bike_counts_2024 |> 
+  summarize(.by = id, 
+            counts = sum(counts)) |>
+  left_join(bike_counters, by = "id") |>view()
+  group_by(counter,geometry) |>
+  summarize(total_count = sum(counts)) |>
+  st_as_sf() 
+
+# find bike lane closest to each counter
+buffers <- st_buffer(bike_routes,120)
+
+counters_routes <- st_join(bike_counts,buffers,
+                             largest = TRUE) |> view()
   filter(!is.na(counter))
 
-counters_routes |>
-  group_by(bikeid,id,counter) |>
-  count() |>
+# Find collisions closest to bike lanes
+buffers <- st_buffer(bike_routes, dist = 100)
+
+collisions_routes <- st_join(collisions_2024, buffers,
+                             largest = TRUE) |>
+  mutate(near_bike_route = if_else(!is.na(segmentid),1,0)) 
+
+
+counter_crashes <- counters_routes |>
   st_drop_geometry() |>
-  left_join(
-    bike_counts_2024 |>
-      group_by(id) |>
-      summarize(counts = sum(counts))
-  ) |>
-  distinct(bikeid,counter,counts) |>
-  group_by(bikeid) |>
-  summarize(total_count = sum(counts)) |>
+  distinct(bikeid,counter,total_count) |> 
   inner_join(collisions_routes |>
                st_drop_geometry() |>
                group_by(bikeid) |>
@@ -372,13 +385,28 @@ counters_routes |>
   mutate(crashes_per_count = n / total_count) |>
   inner_join(bike_routes) |> 
   st_as_sf() |>
+  group_by(bikeid) |>
+  mutate(bike_lane_length = as.numeric(sum(st_length(geometry)))/5280,
+         count_miles = total_count * bike_lane_length,
+         crashes_per_count_mile = n /count_miles) |> 
+  filter(count_miles > 10000) 
+
+counter_crashes |>
+  group_by(bikeid) |>
+  summarize(name = list(unique(str_c(street,"_",fromstreet,"_",tostreet))),
+            facilitycl = unique(facilitycl),
+            crashes = max(n),
+            rider_volume = max(total_count),
+            bike_lane_length = max(bike_lane_length),
+            crashes_per_count_mile = max(crashes_per_count_mile)) |>
+  arrange(-crashes_per_count_mile)
+
+counter_crashes |>
   ggplot() +
   annotation_map_tile(type = "cartolight", zoomin = 0) +
-  geom_sf(aes(color = 10000*crashes_per_count)) +
-  scale_color_viridis_c(name = "Crashes per 10,000 riders") +
+  geom_sf(aes(color = 100000*crashes_per_count_mile)) +
+  scale_color_viridis_c(name = "Crashes per 100,000 annual rider-miles") +
   theme_void()
-
-
 
 ```
 
@@ -386,17 +414,24 @@ counters_routes |>
 
 crashes and bike lanes per area (and per population?)
 
+May want to account for whether crashes were on bike lanes or not on ibke lanes!
 ```{r}
+buffers <- st_buffer(bike_routes, dist = 100)
+
+collisions_routes <- st_join(collisions_2024, buffers) |>
+  mutate(near_bike_route = if_else(!is.na(segmentid),1,0)) 
+
 cd_collisions <- nyc_cd |>
   filter(pop1 > 1000) |>
   mutate(area = as.numeric(st_area(geometry)) / (5280*5280)) |>
   st_join(bike_routes |>
-  mutate(bike_lane_length = st_length(bike_routes))) |>
+            mutate(bike_lane_length = as.numeric(st_length(bike_routes))/5280)) |>
   group_by(boro_cd, area, pop1) |> 
   summarize(bike_lane_length = as.numeric(sum(bike_lane_length))) |>
-  st_join(collisions_2024) |> 
+  st_join(collisions_routes) |> 
   group_by(boro_cd, area, pop1, bike_lane_length) |>
-  summarize(num_crashes = n()) |>
+  summarize(num_crashes = n(),
+            crashes_on_routes = sum(near_bike_route)) |>
   mutate(crashes_per_mile = num_crashes/bike_lane_length,
          crashes_per_area = num_crashes / area,
          bike_lanes_per_area = bike_lane_length / area,
@@ -425,7 +460,11 @@ cd_collisions |>
   geom_point() +
   geom_smooth(method = "lm")
 
-summary(lm(crashes_per_area ~ bike_lanes_per_area, data = cd_collisions))
+cd_collisions |>
+  mutate(pct_on_routes = crashes_on_routes/num_crashes) |> 
+  ggplot(aes(x = bike_lanes_per_area,y = pct_on_routes)) +
+  geom_point() +
+  geom_smooth()
 ```
 
 I think the outline should be something like this
