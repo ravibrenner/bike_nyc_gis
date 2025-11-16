@@ -353,6 +353,9 @@ collisions_routes |>
          injuries_per_mile = num_bike_injured / length_miles,
          deaths_per_mile = num_bike_killed / length_miles,
          killed_per_crash = num_bike_killed / n) 
+  # writexl::write_xlsx("output/crash_route_table.xlsx")
+
+
 ```
 
 
@@ -411,9 +414,12 @@ map1 <- cd_collisions_routes |>
   ggplot() +
   geom_sf(aes(fill = crashes_per_area),
           alpha = 0.5) + 
-  scale_fill_viridis_c(name = NULL,
+  scale_fill_fermenter(name = NULL,
                        breaks = breaks,
-                       labels = round(breaks,1)) +
+                       labels = round(breaks,1),
+                       type = "div",
+                       palette = "RdYlBu",
+                       guide = "colorbar") +
   labs(title ="Bike Collision and Lane Density by Community District, 2024",
        subtitle = "Collisions per Square Mile") + 
   theme_void() + 
@@ -427,9 +433,12 @@ map2 <- cd_collisions_routes |>
   ggplot() +
   geom_sf(aes(fill = bike_lanes_per_area),
           alpha = 0.5) + 
-  scale_fill_viridis_c(name = NULL,
+  scale_fill_fermenter(name = NULL,
                        breaks = breaks,
-                       labels = round(breaks,1)) +
+                       labels = round(breaks,1),
+                       type = "div",
+                       palette = "RdYlBu",
+                       guide = "colorbar") +
   labs(subtitle = "Miles of Bike Lanes per Square Mile") + 
   theme_void() + 
   annotation_north_arrow(
@@ -504,7 +513,7 @@ p2 <- cd_collisions_routes |>
 
 p1 / p2
 ggsave("output/crash_per_area_cd.jpg",
-       width = 7, height = 10)
+       width = 7, height = 7)
 ```
 
 I think the outline should be something like this
@@ -663,13 +672,98 @@ ggplot() +
 ## 3 panel map
 4 panel map? or maybe 3 dropping "link"
 ```{r}
-cd_collisions_routes |> 
-  filter(facilitycl != "Link") |>
+t1 <- cd_collisions_routes |> 
+  filter(facilitycl == "Protected")
+
+breaks <- classInt::classIntervals(t1$crashes_on_routes_per_mile_bike_lane, 
+                                   n = 5, style = "jenks")$brks
+
+m1 <- t1 |>
   ggplot() +
   geom_sf(aes(fill = crashes_on_routes_per_mile_bike_lane)) + 
-  scale_fill_viridis_c() +
+  geom_sf_text(data = \(d) d |>
+                  arrange(-crashes_on_routes_per_mile_bike_lane) |>
+                  head(3),
+                aes(label = boro_cd),
+                color = "black") + 
+  scale_fill_fermenter(name = "Crashes per Mile",
+                       breaks = breaks,
+                       labels = round(breaks,1),
+                       type = "div",
+                       palette = "RdYlBu",
+                       guide = "colorbar") +
+  labs(title = "Bike Crashes on Route per Mile by Bike Route Type",
+       subtitle = "Protected") + 
+  theme_void() +
+  theme(legend.position = "inside",
+        legend.position.inside = c(0.3,0.7))
+
+t2 <- cd_collisions_routes |> 
+  filter(facilitycl == "Conventional")
+
+breaks <- classInt::classIntervals(t2$crashes_on_routes_per_mile_bike_lane, 
+                                   n = 5, style = "jenks")$brks
+
+m2 <- t2 |>
+  ggplot() +
+  geom_sf(aes(fill = crashes_on_routes_per_mile_bike_lane)) + 
+  geom_sf_text(data = \(d) d |>
+                  arrange(-crashes_on_routes_per_mile_bike_lane) |>
+                  head(3),
+                aes(label = boro_cd),
+                color = "black") + 
+  scale_fill_fermenter(name = "Crashes per Mile",
+                       breaks = breaks,
+                       labels = round(breaks,1),
+                       type = "div",
+                       palette = "RdYlBu",
+                       guide = "colorbar") +
+  labs(subtitle = "Conventional") + 
+  theme_void()+
+  theme(legend.position = "inside",
+        legend.position.inside = c(0.3,0.7))
+
+t3 <- cd_collisions_routes |> 
+  filter(facilitycl == "Shared Lane")
+
+breaks <- classInt::classIntervals(t3$crashes_on_routes_per_mile_bike_lane, 
+                                   n = 5, style = "jenks")$brks
+
+m3 <- t3 |>
+  ggplot() +
+  geom_sf(aes(fill = crashes_on_routes_per_mile_bike_lane)) + 
+  geom_sf_text(data = \(d) d |>
+                  arrange(-crashes_on_routes_per_mile_bike_lane) |>
+                  head(3),
+                aes(label = boro_cd),
+                color = "black") + 
+  scale_fill_fermenter(name = "Crashes per Mile",
+                       breaks = breaks,
+                       labels = round(breaks,1),
+                       type = "div",
+                       palette = "RdYlBu",
+                       guide = "colorbar") +
+  labs(subtitle = "Shared Lane") + 
   theme_void() + 
-  facet_wrap(~facilitycl)
+  annotation_north_arrow(
+    style = north_arrow_minimal,
+    height = unit(.8, "cm"),
+    width = unit(.6, "cm"),
+    pad_x = unit(1.5, "in"), 
+    pad_y = unit(0.2, "in"),
+  ) + 
+  annotation_scale(
+    style = "ticks",
+    pad_x = unit(2, "in"), 
+    pad_y = unit(0.2, "in"),
+    unit_category = "imperial") + 
+  theme(legend.position = "inside",
+        legend.position.inside = c(0.3,0.7))
+
+m1 + m2 + m3
+
+ggsave("output/crashes_per_mile_route.jpg",
+       width = 10, height = 6)
 ```
 
 
