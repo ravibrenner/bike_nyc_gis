@@ -145,4 +145,14 @@ nyc_cd |>
            delete_layer = TRUE)
 ```
 
+# ZIP codes
+```{r}
+nyc_zips <- soc_read("https://data.cityofnewyork.us/Health/Modified-Zip-Code-Tabulation-Areas-MODZCTA-/pri4-ifjk/about_data")
+
+nyc_zips |>
+  mutate(zip = modzcta) |>
+  rename(geometry = the_geom) |>
+  select(zip, geometry, pop_est, -starts_with(":")) |>
+  st_write("data/nyc_zips.shp")
+```
 
