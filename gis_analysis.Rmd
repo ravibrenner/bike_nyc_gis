@@ -396,6 +396,7 @@ cd_collisions_routes <- cd_routes |>
   full_join(cd_collisions) |>
   st_as_sf() |>
   mutate(crashes_on_routes_per_mile_bike_lane = crashes_on_routes/bike_lane_length,
+         crashes_per_mile_bike_lane = num_crashes / bike_lane_length,
          crashes_per_area = num_crashes / area,
          bike_lanes_per_area = bike_lane_length / area,
          crashes_per_pop = num_crashes / pop1,
@@ -469,11 +470,97 @@ cd_collisions_routes |>
   ggplot() +
   geom_sf(aes(fill = crashes_on_routes_per_mile_bike_lane),
           alpha = 0.5) + 
-  scale_fill_viridis_c(name = NULL,
+  scale_fill_fermenter(name = NULL,
                        breaks = breaks,
-                       labels = round(breaks,1)) +
-  labs(subtitle = "Crashes on routes per mile bike lane") + 
-  theme_void()
+                       labels = round(breaks,1),
+                       type = "div",
+                       palette = "RdYlBu",
+                       guide = "colorbar") +
+  labs(title = "Crashes on Bike Routes per Mile") + 
+  theme_void() +
+  annotation_north_arrow(
+    style = north_arrow_minimal,
+    height = unit(.8, "cm"),
+    width = unit(.6, "cm"),
+    pad_x = unit(2.5, "in"), 
+    pad_y = unit(0.3, "in"),
+  ) + 
+  annotation_scale(
+    style = "ticks",
+    pad_x = unit(3, "in"), 
+    pad_y = unit(0.3, "in"),
+    unit_category = "imperial") + 
+  theme(legend.position = "inside",
+        legend.position.inside = c(0.3,0.7))
+
+ggsave("output/crashes_per_mile.jpg",
+       width = 6, height = 5)
+```
+
+bivariate map
+```{r}
+bi_cd <- bi_class(
+  cd_collisions_routes,      # data
+  x = bike_lanes_per_area,    # First variable: % below poverty line (will be classified into 3 quantile groups)
+  y = crashes_per_area,    # Second variable: COVID death rate (also classified into 3 quantile groups)
+  style = "quantile", # Method: quantile cuts; could also use "jenks"
+  dim = 3              # Dimension: 3 x 3 classification (low/medium/high for each variable)
+)
+
+bi_map <- ggplot () +
+  geom_sf(
+    data = bi_cd, 
+    aes(fill = bi_class), 
+    color = NA, 
+    linewidth = 0.1, 
+    show.legend = FALSE
+  ) +
+   bi_scale_fill(
+    pal = "GrPink", 
+    dim = 3
+  ) +
+  geom_sf(
+    data = nyc_cd,
+    color = "black",
+    fill = NA
+  ) + theme_void() +
+  labs(title = "Bike Lane and Crash Density by Community District") +
+  annotation_north_arrow(
+    style = north_arrow_minimal,
+    height = unit(.8, "cm"),
+    width = unit(.6, "cm"),
+    pad_x = unit(2.5, "in"), 
+    pad_y = unit(0.3, "in"),
+  ) + 
+  annotation_scale(
+    style = "ticks",
+    pad_x = unit(3, "in"), 
+    pad_y = unit(0.3, "in"),
+    unit_category = "imperial") + 
+  theme(legend.position = "inside",
+        legend.position.inside = c(0.3,0.7))
+
+legend <- bi_legend(
+  pal = "GrPink",
+  dim = 3,
+  xlab = "Bike Lane Density",
+  ylab =  "Crash Density",
+  size = 8
+)  
+
+# Add the bivariate legend to the map as an inset (using {patchwork})
+
+bi_map +
+  inset_element(
+    legend,              # the bivariate legend grob (created with bi_legend())
+    left = 0.05,         # 5% from the left edge of the map
+    bottom = 0.45,       # starting halfway up from the bottom
+    right = 0.43,        # extends to 43% of map width
+    top = 0.85           # extends to 85% of map height
+  )
+
+ggsave("output/lane_crash_density_bivar.jpg",
+       width = 6, height = 5)
 ```
 
 
@@ -490,7 +577,7 @@ p1 <- cd_collisions_routes |>
               color = "red") +
   labs(x = "Miles of Bike Lanes per Square Mile",
        y = "Collisions per Square Mile",
-       title = "Bike Collision and Lane Density by Community District, 2024") + 
+       subtitle = "Bike Collision and Lane Density by Community District") + 
   theme_minimal() 
 
 cd_collisions_routes |>
@@ -498,6 +585,13 @@ cd_collisions_routes |>
   ggplot(aes(x = bike_lane_length, y = num_crashes)) +
   geom_point() +
   geom_smooth(method = "lm")
+
+cd_collisions_routes |>
+  mutate(pct_on_routes = crashes_on_routes/num_crashes) |> 
+  ggplot(aes(x = bike_lanes_pct, y = crashes_pct)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
 
 p2 <- cd_collisions_routes |>
   mutate(pct_on_routes = crashes_on_routes/num_crashes) |> 
@@ -507,13 +601,13 @@ p2 <- cd_collisions_routes |>
               se = FALSE)+
   labs(x = "Miles of Bike Lanes per Square Mile",
        y = "Percent of Collisions on Bike Lanes",
-       title = "Collisions on Bike Lanes by Community District") + 
+       subtitle = "Collisions on Bike Lanes by Community District") + 
   ylim(0,100) + 
   theme_minimal() 
 
-p1 / p2
+p1 + p2
 ggsave("output/crash_per_area_cd.jpg",
-       width = 7, height = 7)
+       width = 10, height = 5)
 ```
 
 I think the outline should be something like this
@@ -564,10 +658,9 @@ cd_collisions_routes <- cd_routes |>
          crashes_per_lane_density = num_crashes / bike_lanes_per_area,
          crashes_per_pop = num_crashes / pop1,
          bike_lanes_per_pop = bike_lane_length / pop1) |>
-  ungroup() |>
-  mutate(crashes_pct = num_crashes / sum(num_crashes),
-         bike_lanes_pct = bike_lane_length / sum(bike_lane_length),
-         pop_pct = pop1 / sum(pop1))
+  group_by(boro_cd) |>
+  mutate(crashes_pct = num_crashes / sum(num_crashes,na.rm = T),
+         bike_lanes_pct = bike_lane_length / sum(bike_lane_length,na.rm = T))
 ```
 
 Some plots using this
@@ -578,15 +671,16 @@ cd_collisions_routes |>
          total_crashes = sum(num_crashes,na.rm = T),
          total_lane_length = sum(bike_lane_length,na.rm = T),
          total_bike_lane_density= sum(bike_lanes_per_area,na.rm = T),
+         total_crashes_per_mile_lane = total_crashes / total_lane_length,
          bike_lane_len_pct = bike_lane_length / sum(bike_lane_length,na.rm = T)) |>
   # filter(facilitycl == "Protected") |>
-  ggplot(aes(x = bike_lanes_per_area, y = crashes_per_area)) +
+  ggplot(aes(x = bike_lane_len_pct, y = total_crashes_per_mile_lane)) +
   geom_point() +
   geom_smooth(method = "lm") + 
   facet_wrap(~facilitycl)
 
 cd_collisions_routes |>
-  ggplot(aes(x = bike_lane_length, y = num_crashes)) + 
+  ggplot(aes(x = bike_lanes_pct, y = crashes_pct)) + 
   geom_point() + 
   geom_smooth(method = "lm") + 
   facet_wrap(~facilitycl)
@@ -633,19 +727,20 @@ centroids <- cd_collisions_routes |>
 
 temp <- cd_collisions_routes |>
   group_by(boro_cd) |>
-  summarize(crashes_per_area = sum(crashes_per_area,na.rm = T))
+  summarize(bike_lane_length = sum(bike_lane_length,na.rm = T))
 
-breaks <- classInt::classIntervals(temp$crashes_per_area, n = 5, style = "jenks")$brks
+breaks <- classInt::classIntervals(temp$bike_lane_length, n = 5, style = "quantile")$brks
 
 ggplot() + 
   geom_sf(data = cd_collisions_routes |>
             group_by(boro_cd) |>
-            summarize(crashes_per_area = sum(crashes_per_area,na.rm = T)),
-          aes(fill = crashes_per_area),
+            summarize(bike_lane_length = sum(bike_lane_length,na.rm = T)),
+          aes(fill = bike_lane_length),
           alpha = 0.5) + 
-  scale_fill_viridis_c(name = "Crashes per Square Mile",
-                       breaks = breaks,
-                       labels = round(breaks,1)) +
+  scale_fill_fermenter(name = "Total Miles of Bike lanes",
+                       type = "div",
+                       palette = "Spectral",
+                       guide = "colorbar") +
   ggnewscale::new_scale_fill() +
   scatterpie::geom_scatterpie(
     data = cd_collisions_routes |>
@@ -666,7 +761,26 @@ ggplot() +
     cols = c("Protected","Conventional","Shared Lane","Link")
   ) +
   scale_fill_discrete(name = "Bike lane type") + 
-  theme_void()
+  labs(title = "Distribution of Bike Lane types",
+       subtitle = "By Total Mileage and Community District") + 
+  theme_void() +
+  annotation_north_arrow(
+    style = north_arrow_minimal,
+    height = unit(.8, "cm"),
+    width = unit(.6, "cm"),
+    pad_x = unit(2.5, "in"), 
+    pad_y = unit(0.3, "in"),
+  ) + 
+  annotation_scale(
+    style = "ticks",
+    pad_x = unit(3, "in"), 
+    pad_y = unit(0.3, "in"),
+    unit_category = "imperial") + 
+  theme(legend.position = "inside",
+        legend.position.inside = c(0.3,0.7))
+
+ggsave("output/lane_dist.jpg",
+       width = 5, height = 6)
 ```
 
 ## 3 panel map
@@ -766,6 +880,81 @@ ggsave("output/crashes_per_mile_route.jpg",
        width = 10, height = 6)
 ```
 
+bivariate map x3
+```{r}
+
+kde_by_shift <- robs |> 
+  group_by(shift) |> 
+  group_modify(
+    ~ hotspot_kde(.x, 
+                  cell_size = 150,
+                  bandwidth_adjust = .6,
+                  grid_type = "hex")
+  ) |> 
+  ungroup() |> 
+  st_as_sf() |> 
+  st_intersection(WH) 
+
+
+bi_cd_lane <- cd_collisions_routes |>
+  filter(facilitycl %in% c("Protected","Conventional","Shared Lane")) |>
+  group_by(facilitycl) |>
+  group_modify(
+    ~bi_class(.x,
+              x = bike_lanes_per_area,    # First variable: % below poverty line (will be classified into 3 quantile groups)
+              y = crashes_per_area,    # Second variable: COVID death rate (also classified into 3 quantile groups)
+              style = "quantile", # Method: quantile cuts; could also use "jenks"
+              dim = 3              # Dimension: 3 x 3 classification (low/medium/high for each variable)
+    )) |>
+  ungroup() |>
+  st_as_sf()
+
+bi_map <- ggplot () +
+  geom_sf(
+    data = bi_cd_lane, 
+    aes(fill = bi_class), 
+    color = NA, 
+    linewidth = 0.1, 
+    show.legend = FALSE
+  ) +
+   bi_scale_fill(
+    pal = "GrPink", 
+    dim = 3
+  ) +
+  geom_sf(
+    data = nyc_cd,
+    color = "black",
+    fill = NA
+  ) + 
+  theme_void() +
+  facet_wrap(~facilitycl,
+             ncol = 2) + 
+  labs(title = "Bike Lane Type and Crash Density by Community District") + 
+  theme(strip.text = element_text(hjust = 0.5))
+
+legend <- bi_legend(
+  pal = "GrPink",
+  dim = 3,
+  xlab = "Bike Lane Density",
+  ylab =  "Crash Density",
+  size = 8
+)  
+
+# Add the bivariate legend to the map as an inset (using {patchwork})
+
+bi_map +
+  inset_element(
+    legend,              # the bivariate legend grob (created with bi_legend())
+    left = 0.6,     
+    right = 0.9,     
+    bottom = 0.1,      
+    top = 0.4         
+  )
+
+ggsave("output/lanetype_crash_bivar.jpg",
+       width = 6, height = 6)
+```
+
 
 ## KDE
 
@@ -807,62 +996,5 @@ ggplot() +
 ```
 
 
-## ratio map
-
-```{r}
-buffers <- st_buffer(bike_routes, dist = 100)
-
-collisions_routes <- st_join(collisions_2024, buffers) |>
-  mutate(near_bike_route = if_else(!is.na(segmentid),1,0)) 
-
-cd_routes <- nyc_cd |>
-  # start with community districts, get their areas
-  filter(pop1 > 1000) |>
-  mutate(area = as.numeric(st_area(geometry)) / (5280*5280)) |>
-  # Spatially join to bike routes with length
-  st_join(bike_routes |>
-            mutate(bike_lane_length = as.numeric(st_length(bike_routes))/5280)) |>
-  # aggregate by cd and bike lane type
-  group_by(boro_cd, area, pop1) |>
-  summarize(bike_lane_length = as.numeric(sum(bike_lane_length))) 
-
-
-  # now join cd with collisions on routes
-cd_collisions <- nyc_cd |>
-  filter(pop1 > 1000) |>
-  mutate(area = as.numeric(st_area(geometry)) / (5280*5280)) |>
-  st_join(collisions_routes) |> 
-  group_by(boro_cd, area, pop1) |>
-  summarize(num_crashes = n(),
-            crashes_on_routes = sum(near_bike_route)) 
-
-cd_collisions_routes <- cd_routes |>
-  st_drop_geometry() |>
-  full_join(cd_collisions) |>
-  st_as_sf() |>
-  mutate(crashes_on_routes_per_mile_bike_lane = crashes_on_routes/bike_lane_length,
-         crashes_per_area = num_crashes / area,
-         bike_lanes_per_area = bike_lane_length / area,
-         crashes_per_pop = num_crashes / pop1,
-         bike_lanes_per_pop = bike_lane_length / pop1) |>
-  ungroup() |>
-  mutate(crashes_pct = num_crashes / sum(num_crashes),
-         bike_lanes_pct = bike_lane_length / sum(bike_lane_length),
-         pop_pct = pop1 / sum(pop1))
-```
-
-```{r}
-temp <- cd_collisions_routes |>
-  mutate(expected = sum(num_crashes) * bike_lanes_pct,
-         RR = num_crashes / expected)
-
-rr_manual_breaks <- c(0,0.50, 0.90, 1.10, 1.50, 2.63)
-
-ggplot() + 
-  geom_sf(data = temp,
-          aes(fill = RR)) + 
-  scale_fill_viridis_c(breaks = rr_manual_breaks) + 
-  theme_void()
-```
 
 
