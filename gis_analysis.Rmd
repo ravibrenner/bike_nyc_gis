@@ -409,7 +409,7 @@ cd_collisions_routes <- cd_routes |>
 
 Make some maps
 ```{r}
-breaks <- classInt::classIntervals(cd_collisions_routes$crashes_per_area, n = 5, style = "jenks")$brks
+breaks <- classInt::classIntervals(cd_collisions_routes$crashes_per_area, n = 4, style = "quantile")$brks
 
 map1 <- cd_collisions_routes |>
   ggplot() +
@@ -417,18 +417,17 @@ map1 <- cd_collisions_routes |>
           alpha = 0.5) + 
   scale_fill_fermenter(name = NULL,
                        breaks = breaks,
-                       labels = round(breaks,1),
+                       labels = c("",round(breaks,1)[2:length(breaks)]),
                        type = "div",
                        palette = "RdYlBu",
                        guide = "colorbar") +
-  labs(title ="Bike Collision and Lane Density by Community District, 2024",
-       subtitle = "Collisions per Square Mile") + 
+  labs(title ="Collisions per Square Mile") + 
   theme_void() + 
   theme(legend.position = "inside",
         legend.position.inside = c(0.3,0.7))
 
 # move legend, add scale and north arrow
-breaks <- classInt::classIntervals(cd_collisions_routes$bike_lanes_per_area, n = 5, style = "jenks")$brks
+breaks <- classInt::classIntervals(cd_collisions_routes$bike_lanes_per_area, n = 4, style = "quantile")$brks
 
 map2 <- cd_collisions_routes |>
   ggplot() +
@@ -440,7 +439,7 @@ map2 <- cd_collisions_routes |>
                        type = "div",
                        palette = "RdYlBu",
                        guide = "colorbar") +
-  labs(subtitle = "Miles of Bike Lanes per Square Mile") + 
+  labs(title = "Miles of Bike Lanes per Square Mile") + 
   theme_void() + 
   annotation_north_arrow(
     style = north_arrow_minimal,
@@ -504,7 +503,7 @@ bi_cd <- bi_class(
   x = bike_lanes_per_area,    # First variable: % below poverty line (will be classified into 3 quantile groups)
   y = crashes_per_area,    # Second variable: COVID death rate (also classified into 3 quantile groups)
   style = "quantile", # Method: quantile cuts; could also use "jenks"
-  dim = 3              # Dimension: 3 x 3 classification (low/medium/high for each variable)
+  dim = 4              # Dimension: 3 x 3 classification (low/medium/high for each variable)
 )
 
 bi_map <- ggplot () +
@@ -516,33 +515,21 @@ bi_map <- ggplot () +
     show.legend = FALSE
   ) +
    bi_scale_fill(
-    pal = "GrPink", 
-    dim = 3
+    pal = "DkBlue2", 
+    dim = 4
   ) +
   geom_sf(
     data = nyc_cd,
     color = "black",
     fill = NA
   ) + theme_void() +
-  labs(title = "Bike Lane and Crash Density by Community District") +
-  annotation_north_arrow(
-    style = north_arrow_minimal,
-    height = unit(.8, "cm"),
-    width = unit(.6, "cm"),
-    pad_x = unit(2.5, "in"), 
-    pad_y = unit(0.3, "in"),
-  ) + 
-  annotation_scale(
-    style = "ticks",
-    pad_x = unit(3, "in"), 
-    pad_y = unit(0.3, "in"),
-    unit_category = "imperial") + 
+  labs(title = "Bike Lane and Crash Density") +
   theme(legend.position = "inside",
         legend.position.inside = c(0.3,0.7))
 
 legend <- bi_legend(
-  pal = "GrPink",
-  dim = 3,
+  pal = "DkBlue2",
+  dim = 4,
   xlab = "Bike Lane Density",
   ylab =  "Crash Density",
   size = 8
@@ -550,17 +537,19 @@ legend <- bi_legend(
 
 # Add the bivariate legend to the map as an inset (using {patchwork})
 
-bi_map +
+map3 <- bi_map +
   inset_element(
     legend,              # the bivariate legend grob (created with bi_legend())
     left = 0.05,         # 5% from the left edge of the map
     bottom = 0.45,       # starting halfway up from the bottom
     right = 0.43,        # extends to 43% of map width
     top = 0.85           # extends to 85% of map height
-  )
+  ) 
 
+
+map1 + map2 + map3  + plot_annotation(tag_levels = 'A')
 ggsave("output/lane_crash_density_bivar.jpg",
-       width = 6, height = 5)
+       width = 12, height = 4)
 ```
 
 
@@ -586,16 +575,21 @@ cd_collisions_routes |>
   geom_point() +
   geom_smooth(method = "lm")
 
-cd_collisions_routes |>
-  mutate(pct_on_routes = crashes_on_routes/num_crashes) |> 
-  ggplot(aes(x = bike_lanes_pct, y = crashes_pct)) +
-  geom_point() +
-  geom_smooth(method = "lm")
-
-
 p2 <- cd_collisions_routes |>
   mutate(pct_on_routes = crashes_on_routes/num_crashes) |> 
-  ggplot(aes(x = bike_lanes_per_area,y = 100 * pct_on_routes)) +
+  ggplot(aes(x = 10000*bike_lanes_per_pop, y = 10000*crashes_per_pop)) +
+  geom_point(color = "royalblue") +
+  geom_smooth(method = "lm",
+              color = "red") +
+  labs(x = "Miles of Bike Lanes per 10,000 people",
+       y = "Collisions per 10,000 people",
+       subtitle = "Bike Collision and Lanes per 10,000 Population") + 
+  theme_minimal() 
+
+
+cd_collisions_routes |>
+  mutate(pct_on_routes = crashes_on_routes/num_crashes) |> 
+  ggplot(aes(x = bike_lanes_per_area,y = 100 * pct_on_routes,)) +
   geom_point(color = "royalblue") +
   geom_smooth(color = "red",
               se = FALSE)+
@@ -607,7 +601,11 @@ p2 <- cd_collisions_routes |>
 
 p1 + p2
 ggsave("output/crash_per_area_cd.jpg",
-       width = 10, height = 5)
+       width = 8, height = 4)
+
+ggsave("output/crash_per_area_scatter.jpg",
+       p1,
+       width = 6, height = 4)
 ```
 
 I think the outline should be something like this
