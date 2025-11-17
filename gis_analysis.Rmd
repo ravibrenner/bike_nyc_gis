@@ -421,7 +421,7 @@ map1 <- cd_collisions_routes |>
                        type = "div",
                        palette = "RdYlBu",
                        guide = "colorbar") +
-  labs(title ="Collisions per Square Mile") + 
+  labs(title ="A. Collisions per Square Mile") + 
   theme_void() + 
   theme(legend.position = "inside",
         legend.position.inside = c(0.3,0.7))
@@ -439,7 +439,7 @@ map2 <- cd_collisions_routes |>
                        type = "div",
                        palette = "RdYlBu",
                        guide = "colorbar") +
-  labs(title = "Miles of Bike Lanes per Square Mile") + 
+  labs(title = "B. Miles of Bike Lanes per Square Mile") + 
   theme_void() + 
   annotation_north_arrow(
     style = north_arrow_minimal,
@@ -523,7 +523,7 @@ bi_map <- ggplot () +
     color = "black",
     fill = NA
   ) + theme_void() +
-  labs(title = "Bike Lane and Crash Density") +
+  labs(title = "C. Bike Lane and Crash Density") +
   theme(legend.position = "inside",
         legend.position.inside = c(0.3,0.7))
 
@@ -547,7 +547,7 @@ map3 <- bi_map +
   ) 
 
 
-map1 + map2 + map3  + plot_annotation(tag_levels = 'A')
+map1 + map2 + map3
 ggsave("output/lane_crash_density_bivar.jpg",
        width = 12, height = 4)
 ```
