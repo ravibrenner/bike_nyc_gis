@@ -680,17 +680,31 @@ cd_collisions_routes |>
   facet_wrap(~facilitycl)
 
 cd_collisions_routes |>
-  ggplot(aes(x = bike_lanes_pct, y = crashes_pct)) + 
-  geom_point() + 
-  geom_smooth(method = "lm") + 
-  facet_wrap(~facilitycl)
+  filter(facilitycl != "Link") |>
+  ggplot(aes(x = bike_lanes_per_area, y = crashes_per_area,
+             color = facilitycl)) +
+  geom_point() +
+  geom_smooth(method = "lm")  +
+  theme_minimal()
 
 cd_collisions_routes |>
-  ggplot(aes(x = bike_lanes_per_area, y = crashes_per_area,
-             group = facilitycl, color = facilitycl,
-             size = bike_lane_length)) +
-  geom_point() +
-  facet_wrap(~facilitycl)
+  filter(facilitycl != "Link") |>
+  ggplot(aes(x = 100 * bike_lanes_pct, y = 100 * crashes_pct,
+             color = facilitycl, size = bike_lane_length)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(size = 1,
+              method = "lm",
+              se = FALSE)  +
+  scale_size_continuous(name = "Bike Lane Length (Miles)") + 
+  scale_color_discrete(name = "Bike Lane Type") +
+  labs(x = "Percent of Bike Lanes",
+       y = "Percent of Crashes on Bike Lanes",
+       title = "Percent of Crashes vs. Percent of Bike Lanes",
+       subtitle = "By Community District") +
+  theme_minimal()
+
+ggsave("output/pct_crashes_lanes.jpg",
+       width = 5,height = 3.5)
 
 cd_collisions_routes |>
   group_by(boro_cd) |> 
@@ -882,20 +896,6 @@ ggsave("output/crashes_per_mile_route.jpg",
 
 bivariate map x3
 ```{r}
-
-kde_by_shift <- robs |> 
-  group_by(shift) |> 
-  group_modify(
-    ~ hotspot_kde(.x, 
-                  cell_size = 150,
-                  bandwidth_adjust = .6,
-                  grid_type = "hex")
-  ) |> 
-  ungroup() |> 
-  st_as_sf() |> 
-  st_intersection(WH) 
-
-
 bi_cd_lane <- cd_collisions_routes |>
   filter(facilitycl %in% c("Protected","Conventional","Shared Lane")) |>
   group_by(facilitycl) |>
@@ -929,15 +929,16 @@ bi_map <- ggplot () +
   theme_void() +
   facet_wrap(~facilitycl,
              ncol = 2) + 
-  labs(title = "Bike Lane Type and Crash Density by Community District") + 
-  theme(strip.text = element_text(hjust = 0.5))
+  labs(title = "Bike Lane and Crash Density by Lane Type") + 
+  theme(strip.text = element_text(hjust = 0.5,
+                                  size = rel(1.2)))
 
 legend <- bi_legend(
   pal = "GrPink",
   dim = 3,
   xlab = "Bike Lane Density",
   ylab =  "Crash Density",
-  size = 8
+  size = 10
 )  
 
 # Add the bivariate legend to the map as an inset (using {patchwork})
